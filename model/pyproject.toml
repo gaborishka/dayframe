@@ -13,7 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dataset = [
-    "anthropic>=0.39.0",
+    "google-genai>=1.0.0",
 ]
 train = [
     "torch>=2.1.0",

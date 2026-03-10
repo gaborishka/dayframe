@@ -47,38 +47,62 @@ async def main():
     parser.add_argument("--dataset-version", default="v0.1.0")
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
-    examples = []
+    raw_path = os.path.join(args.output_dir, "raw_examples.jsonl")
     seed = 0
+    accepted = 0
     combos = [
         (p["name"], dt, tone, pc)
         for p in PERSONAS for dt in DAY_TYPES for tone in TONES for pc in [4, 5, 6]
     ]
-    print(f"Generating up to {args.target_count} examples from {len(combos)} combinations...")
-    for persona_name, day_type, tone, panel_count in combos:
-        if len(examples) >= args.target_count:
-            break
-        seed += 1
-        day_index = (seed % 7) + 1
-        print(f"[{len(examples)+1}/{args.target_count}] {persona_name}/{day_type}/{tone}/{panel_count}p")
-        ex = await generate_single_example(persona_name, day_type, tone, panel_count, seed, day_index)
-        if ex:
-            examples.append(ex)
+
+    # Resume: count existing examples if raw file exists
+    existing_ids = set()
+    if os.path.exists(raw_path):
+        with open(raw_path) as f:
+            for line in f:
+                obj = json.loads(line)
+                existing_ids.add(obj["id"])
+        accepted = len(existing_ids)
+        print(f"Resuming: {accepted} existing examples found", flush=True)
+
+    print(f"Generating up to {args.target_count} examples from {len(combos)} combinations...", flush=True)
+    with open(raw_path, "a") as raw_f:
+        for persona_name, day_type, tone, panel_count in combos:
+            if accepted >= args.target_count:
+                break
+            seed += 1
+            day_index = (seed % 7) + 1
+            example_id = f"{persona_name}-{day_type}-{tone}-{panel_count}p-{seed}"
+            if example_id in existing_ids:
+                continue
+            print(f"[{accepted+1}/{args.target_count}] {persona_name}/{day_type}/{tone}/{panel_count}p", flush=True)
+            ex = await generate_single_example(persona_name, day_type, tone, panel_count, seed, day_index)
+            if ex:
+                raw_f.write(json.dumps(ex) + "\n")
+                raw_f.flush()
+                accepted += 1
+
+    # Read all raw examples back, dedup, split, export
+    examples = []
+    with open(raw_path) as f:
+        for line in f:
+            examples.append(json.loads(line))
     examples = deduplicate_examples(examples)
-    print(f"\nAfter dedup: {len(examples)} examples")
+    print(f"\nAfter dedup: {len(examples)} examples", flush=True)
     splits = split_dataset(examples, train_ratio=0.8, val_ratio=0.1, seed=42)
     for name, exs in splits.items():
-        print(f"  {name}: {len(exs)}")
+        print(f"  {name}: {len(exs)}", flush=True)
     for split_name, split_examples in splits.items():
         path = os.path.join(args.output_dir, f"{split_name}.jsonl")
         export_jsonl(split_examples, path)
-        print(f"Wrote {path}")
+        print(f"Wrote {path}", flush=True)
     eval_subset = (splits["val"] + splits["test"])[:20]
     eval_path = os.path.join(args.output_dir, "eval_curated_subset.jsonl")
     export_jsonl(eval_subset, eval_path)
-    print(f"Wrote {eval_path}")
+    print(f"Wrote {eval_path}", flush=True)
     manifest_path = os.path.join(args.output_dir, "dataset_manifest.json")
     write_manifest(splits, manifest_path, args.dataset_version, "0.1.0")
-    print(f"Wrote {manifest_path}")
+    print(f"Wrote {manifest_path}", flush=True)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,4 +1,4 @@
-"""ComicScript target generation for DayFrame dataset building."""
+"""ComicScript target generation for DayFrame dataset building (Gemini)."""
 from __future__ import annotations
 
 import json
@@ -144,7 +144,7 @@ Return ONLY a JSON object with this exact ComicScript structure:
     "recurring_elements": ["<element1>", "<element2>"]
   }},
   "generation_metadata": {{
-    "model_version": "synthetic-claude",
+    "model_version": "synthetic-gemini",
     "attempt_count": 1,
     "generation_time_ms": 0,
     "prompt_tokens": 0,
@@ -213,13 +213,13 @@ async def generate_target(
     api_key: Optional[str] = None,
     max_retries: int = 2,
 ) -> tuple[Optional[dict], Optional[str]]:
-    """Call the Claude API to generate a ComicScript target.
+    """Call the Gemini API to generate a ComicScript target.
 
     Args:
         enriched_context: An EnrichedDayContext dict.
         tone: Desired tone string.
         panel_count: Number of panels (4-6).
-        api_key: Anthropic API key. If None, uses ANTHROPIC_API_KEY env var.
+        api_key: Gemini API key. If None, uses GEMINI_API_KEY env var.
         max_retries: Maximum number of generation attempts.
 
     Returns:
@@ -227,27 +227,32 @@ async def generate_target(
         On failure, script_dict is None and error is a descriptive string.
     """
     try:
-        import anthropic
+        from google import genai
     except ImportError:
-        return None, "anthropic package is not installed; run: pip install anthropic"
+        return None, "google-genai package is not installed; run: pip install google-genai"
 
     prompt = build_generation_prompt(enriched_context, tone=tone, panel_count=panel_count)
 
     client_kwargs: dict = {}
     if api_key is not None:
         client_kwargs["api_key"] = api_key
+    else:
+        import os
+        env_key = os.environ.get("GEMINI_API_KEY")
+        if env_key:
+            client_kwargs["api_key"] = env_key
 
-    client = anthropic.Anthropic(**client_kwargs)
+    client = genai.Client(**client_kwargs)
 
     last_error: Optional[str] = None
 
     for attempt in range(1, max_retries + 1):
         start_ms = int(time.time() * 1000)
         try:
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}],
+            response = client.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=prompt,
+                config={"max_output_tokens": 4096},
             )
         except Exception as exc:  # noqa: BLE001
             last_error = f"API call failed (attempt {attempt}): {exc}"
@@ -255,7 +260,7 @@ async def generate_target(
 
         elapsed_ms = int(time.time() * 1000) - start_ms
 
-        raw_text = response.content[0].text if response.content else ""
+        raw_text = response.text or ""
         script, parse_error = parse_comic_script_response(raw_text)
 
         if parse_error:
@@ -279,15 +284,15 @@ async def generate_target(
 
         # Set model_version and populate generation_metadata
         gen_meta = script.setdefault("generation_metadata", {})
-        gen_meta["model_version"] = "synthetic-claude"
+        gen_meta["model_version"] = "synthetic-gemini"
         gen_meta["attempt_count"] = attempt
         gen_meta["generation_time_ms"] = elapsed_ms
 
         # Capture token usage if available
-        usage = getattr(response, "usage", None)
+        usage = getattr(response, "usage_metadata", None)
         if usage is not None:
-            gen_meta["prompt_tokens"] = getattr(usage, "input_tokens", 0)
-            gen_meta["completion_tokens"] = getattr(usage, "output_tokens", 0)
+            gen_meta["prompt_tokens"] = getattr(usage, "prompt_token_count", 0)
+            gen_meta["completion_tokens"] = getattr(usage, "candidates_token_count", 0)
         else:
             gen_meta.setdefault("prompt_tokens", 0)
             gen_meta.setdefault("completion_tokens", 0)
