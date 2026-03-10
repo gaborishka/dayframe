@@ -1,0 +1,20 @@
+# Generated data (keep manifest)
+data/*.jsonl
+!data/.gitkeep
+
+# Training artifacts
+artifacts/
+!artifacts/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.venv/
+venv/
