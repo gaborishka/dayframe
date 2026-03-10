@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/EnrichedDayContext.schema.json",
+  "title": "EnrichedDayContext",
+  "description": "Locked input contract for the private DayFrame script model in v1. Versioning note: Agent 1 and Agent 2 must treat this schema as fixed unless both sides coordinate a contract change.",
+  "type": "object",
+  "properties": {
+    "day_context": {
+      "$ref": "DayContext.schema.json"
+    },
+    "story_arc_snapshot": {
+      "$ref": "shared.schema.json#/$defs/storyArcSnapshot"
+    },
+    "previous_day_hooks": {
+      "oneOf": [
+        {
+          "$ref": "shared.schema.json#/$defs/arcHooks"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "weekly_context": {
+      "$ref": "shared.schema.json#/$defs/weeklyContext"
+    }
+  },
+  "required": [
+    "day_context",
+    "story_arc_snapshot",
+    "previous_day_hooks",
+    "weekly_context"
+  ]
+}

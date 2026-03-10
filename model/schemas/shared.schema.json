@@ -1,0 +1,524 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/shared.schema.json",
+  "title": "DayFrame Shared Schema Definitions",
+  "description": "Shared schema definitions for DayFrame v1. Versioning note: add new keys compatibly and update all dependent contracts together.",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "timezone": {
+      "type": "string",
+      "description": "IANA timezone identifier."
+    },
+    "isoWeek": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$"
+    },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "warningList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "calendarEvent": {
+      "type": "object",
+      "description": "Sensitive raw calendar event. Timestamps must represent the user's local day window.",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "start_time": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "end_time": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "location": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attendees": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "title",
+        "start_time",
+        "end_time",
+        "location",
+        "attendees"
+      ]
+    },
+    "todoItem": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "google_tasks",
+            "manual"
+          ]
+        },
+        "due_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "text",
+        "completed",
+        "source",
+        "due_at"
+      ]
+    },
+    "manualTodoInput": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "completed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text",
+        "completed"
+      ]
+    },
+    "sourceStatus": {
+      "type": "object",
+      "properties": {
+        "calendar_fetch_status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "ok",
+            "failed",
+            "skipped"
+          ]
+        },
+        "tasks_fetch_status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "ok",
+            "failed",
+            "skipped"
+          ]
+        },
+        "manual_input_status": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "present"
+          ]
+        }
+      },
+      "required": [
+        "calendar_fetch_status",
+        "tasks_fetch_status",
+        "manual_input_status"
+      ]
+    },
+    "storyCharacter": {
+      "type": "object",
+      "description": "Fictionalized character data only.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "visual_description": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "visual_description"
+      ]
+    },
+    "dialogueLine": {
+      "type": "object",
+      "properties": {
+        "speaker": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "speaker",
+        "text"
+      ]
+    },
+    "comicPanel": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scene_description": {
+          "type": "string"
+        },
+        "dialogue": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/dialogueLine"
+          }
+        },
+        "visual_prompt": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "mood": {
+          "type": "string"
+        },
+        "narrative_caption": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sequence",
+        "scene_description",
+        "dialogue",
+        "visual_prompt",
+        "mood",
+        "narrative_caption"
+      ]
+    },
+    "arcHooks": {
+      "type": "object",
+      "properties": {
+        "callback_to": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "setup_for": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recurring_elements": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "callback_to",
+        "setup_for",
+        "recurring_elements"
+      ]
+    },
+    "generationMetadata": {
+      "type": "object",
+      "properties": {
+        "model_version": {
+          "type": "string"
+        },
+        "attempt_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "generation_time_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prompt_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completion_tokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "model_version",
+        "attempt_count",
+        "generation_time_ms",
+        "prompt_tokens",
+        "completion_tokens"
+      ]
+    },
+    "storyArcSnapshot": {
+      "type": "object",
+      "properties": {
+        "protagonist": {
+          "$ref": "#/$defs/storyCharacter"
+        },
+        "world_setting": {
+          "type": "string"
+        },
+        "active_threads": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "string"
+          }
+        },
+        "recurring_characters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/storyCharacter"
+          }
+        }
+      },
+      "required": [
+        "protagonist",
+        "world_setting",
+        "active_threads",
+        "recurring_characters"
+      ]
+    },
+    "weeklyContext": {
+      "type": "object",
+      "description": "Week-relative context assembled immediately before script generation.",
+      "properties": {
+        "iso_week": {
+          "$ref": "#/$defs/isoWeek"
+        },
+        "day_index_in_week": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "existing_strip_dates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/date"
+          }
+        },
+        "missing_dates_so_far": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/date"
+          }
+        }
+      },
+      "required": [
+        "iso_week",
+        "day_index_in_week",
+        "existing_strip_dates",
+        "missing_dates_so_far"
+      ]
+    },
+    "generationJobStage": {
+      "type": "string",
+      "enum": [
+        "ingesting",
+        "generating_script",
+        "validating",
+        "rendering_panels",
+        "composing",
+        "storing"
+      ]
+    },
+    "generationJob": {
+      "type": "object",
+      "description": "Canonical async job record for daily strip generation. Versioning note: preserve existing keys and enums when extending.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "user_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "date": {
+          "$ref": "#/$defs/date"
+        },
+        "job_type": {
+          "type": "string",
+          "enum": [
+            "daily_generation",
+            "retroactive_generation",
+            "weekly_compilation"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "retry_scheduled",
+            "ingesting",
+            "generating_script",
+            "validating",
+            "rendering_panels",
+            "composing",
+            "storing",
+            "ready",
+            "failed"
+          ]
+        },
+        "attempt_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "current_stage_retry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "trigger_source": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system",
+            "torn_page_unlock"
+          ]
+        },
+        "leased_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lease_expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "heartbeat_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "last_completed_stage": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/generationJobStage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next_retry_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "error_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "result_strip_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "result_weekly_issue_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "created_at": {
+          "$ref": "#/$defs/dateTime"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/dateTime"
+        }
+      },
+      "required": [
+        "id",
+        "user_id",
+        "date",
+        "job_type",
+        "status",
+        "attempt_number",
+        "current_stage_retry_count",
+        "idempotency_key",
+        "trigger_source",
+        "leased_by",
+        "lease_expires_at",
+        "heartbeat_at",
+        "last_completed_stage",
+        "next_retry_at",
+        "error_code",
+        "error_message",
+        "result_strip_id",
+        "result_weekly_issue_id",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "errorResponse": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "error",
+        "code"
+      ]
+    }
+  }
+}
