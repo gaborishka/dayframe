@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/DailyContextUpsertRequest.schema.json",
+  "title": "DailyContextUpsertRequest",
+  "description": "Canonical request body for PUT /api/day/{date}/context in DayFrame v1. Versioning note: extend compatibly if new optional inputs are added.",
+  "type": "object",
+  "properties": {
+    "manual_todos": {
+      "type": "array",
+      "items": {
+        "$ref": "shared.schema.json#/$defs/manualTodoInput"
+      }
+    },
+    "reflection": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1000
+    }
+  },
+  "required": [
+    "manual_todos",
+    "reflection"
+  ]
+}

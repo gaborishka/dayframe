@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/JobStatusResponse.schema.json",
+  "title": "JobStatusResponse",
+  "description": "Canonical polling response for GET /api/day/{date}/status in DayFrame v1. Versioning note: the latest_strip summary may grow, but this response must remain backward compatible.",
+  "type": "object",
+  "properties": {
+    "job": {
+      "oneOf": [
+        {
+          "$ref": "GenerationJob.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "latest_strip": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Summary of the latest strip when available. SPEC.md intentionally leaves the exact summary shape open at this stage."
+    },
+    "warnings": {
+      "$ref": "shared.schema.json#/$defs/warningList"
+    },
+    "can_regenerate": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "job",
+    "latest_strip",
+    "warnings",
+    "can_regenerate"
+  ]
+}

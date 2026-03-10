@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/ShareLinkResponse.schema.json",
+  "title": "ShareLinkResponse",
+  "description": "Canonical share-link response for DayFrame v1. Versioning note: preserve URL and activation semantics when extending.",
+  "type": "object",
+  "properties": {
+    "share_id": {
+      "type": "string"
+    },
+    "share_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "is_active": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "$ref": "shared.schema.json#/$defs/dateTime"
+    }
+  },
+  "required": [
+    "share_id",
+    "share_url",
+    "is_active",
+    "created_at"
+  ]
+}

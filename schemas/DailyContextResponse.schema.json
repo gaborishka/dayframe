@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/DailyContextResponse.schema.json",
+  "title": "DailyContextResponse",
+  "description": "Canonical response body for daily context reads and upserts in DayFrame v1. Versioning note: preserve canonical keys even if internal metadata is added later.",
+  "type": "object",
+  "properties": {
+    "date": {
+      "$ref": "shared.schema.json#/$defs/date"
+    },
+    "timezone": {
+      "$ref": "shared.schema.json#/$defs/timezone"
+    },
+    "calendar_events": {
+      "type": "array",
+      "items": {
+        "$ref": "shared.schema.json#/$defs/calendarEvent"
+      }
+    },
+    "todo_items": {
+      "type": "array",
+      "items": {
+        "$ref": "shared.schema.json#/$defs/todoItem"
+      }
+    },
+    "reflection": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1000
+    },
+    "warnings": {
+      "$ref": "shared.schema.json#/$defs/warningList"
+    },
+    "updated_at": {
+      "$ref": "shared.schema.json#/$defs/dateTime"
+    }
+  },
+  "required": [
+    "date",
+    "timezone",
+    "calendar_events",
+    "todo_items",
+    "reflection",
+    "warnings",
+    "updated_at"
+  ]
+}

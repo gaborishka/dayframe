@@ -1,0 +1,18 @@
+{
+  "name": "dayframe",
+  "private": true,
+  "packageManager": "pnpm@10.6.2",
+  "scripts": {
+    "db:start": "docker compose up -d db",
+    "db:stop": "docker compose down",
+    "db:migrate": "pnpm --filter @dayframe/api db:migrate",
+    "dev": "concurrently -k -n web,api,worker -c magenta,cyan,yellow \"pnpm --filter @dayframe/web dev\" \"pnpm --filter @dayframe/api dev\" \"pnpm --filter @dayframe/worker dev\"",
+    "test": "pnpm -r --if-present test",
+    "test:e2e": "node ./scripts/run-e2e.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  }
+}

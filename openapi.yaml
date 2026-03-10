@@ -1,0 +1,752 @@
+openapi: 3.1.0
+info:
+  title: DayFrame HTTP API
+  version: draft-v1
+  summary: Canonical HTTP contract for the DayFrame v1 demo
+  description: |
+    This OpenAPI document is the canonical HTTP contract for DayFrame.
+    It mirrors the behavior defined in SPEC.md and intentionally avoids documenting
+    internal ML training artifacts. Shared payload validation lives in the JSON
+    Schema files under `schemas/`.
+    Where SPEC.md names an endpoint but does not yet lock its exact success payload,
+    this contract intentionally keeps the response body loose instead of inventing
+    a stricter read model.
+servers:
+  - url: http://localhost:4000
+    description: Local API server
+  - url: https://api.dayframe.app
+    description: Production-style API host
+security:
+  - cookieAuth: []
+tags:
+  - name: Auth
+  - name: User
+  - name: Day Context
+  - name: Jobs
+  - name: Strips
+  - name: Weekly Issues
+  - name: Torn Pages
+  - name: Sharing
+paths:
+  /auth/google:
+    post:
+      tags: [Auth]
+      summary: Start Google OAuth sign-in and consent
+      description: Starts the Google OAuth flow for identity plus Calendar and Tasks read access.
+      security: []
+      responses:
+        '302':
+          description: Redirects the browser to the Google consent screen.
+          headers:
+            Location:
+              description: Google OAuth authorization URL.
+              schema:
+                type: string
+                format: uri
+  /auth/callback:
+    get:
+      tags: [Auth]
+      summary: Complete Google OAuth callback
+      description: Handles the Google OAuth callback, sets the authenticated session cookie, and redirects back to the app.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirects the user back to the web app after successful authentication.
+          headers:
+            Location:
+              description: Web app destination URL.
+              schema:
+                type: string
+                format: uri
+            Set-Cookie:
+              description: HttpOnly session cookie containing the signed JWT for subsequent authenticated browser requests.
+              schema:
+                type: string
+        '400':
+          description: OAuth callback failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/user/me:
+    get:
+      tags: [User]
+      summary: Return the current authenticated user
+      responses:
+        '200':
+          description: Authenticated user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserMeResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+  /api/user/preferences:
+    patch:
+      tags: [User]
+      summary: Update user preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserPreferencesPatchRequest'
+            example:
+              comic_style: adventure
+              tone: humorous
+              language: en
+      responses:
+        '200':
+          description: Updated user preferences.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreferencesUpdateResponse'
+              example:
+                id: uuid
+                preferences:
+                  comic_style: adventure
+                  tone: humorous
+                  language: en
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          description: Preference validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Unsupported preference value.
+                code: INVALID_PREFERENCES
+  /api/day/{date}/context:
+    parameters:
+      - $ref: '#/components/parameters/DateParam'
+    put:
+      tags: [Day Context]
+      summary: Upsert daily manual input
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DailyContextUpsertRequest'
+            example:
+              manual_todos:
+                - text: Ship landing page copy
+                  completed: true
+                - text: Write reflection
+                  completed: false
+              reflection: Today felt busy but hopeful.
+      responses:
+        '200':
+          description: Daily context saved and merged with available integrations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyContextResponse'
+              example:
+                date: '2026-03-10'
+                timezone: Europe/Uzhgorod
+                calendar_events: []
+                todo_items:
+                  - text: Ship landing page copy
+                    completed: true
+                    source: manual
+                    due_at: null
+                reflection: Today felt busy but hopeful.
+                warnings: []
+                updated_at: '2026-03-10T18:10:00Z'
+        '400':
+          description: Invalid daily input payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Reflection exceeds maximum length.
+                code: INVALID_CONTEXT_PAYLOAD
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    get:
+      tags: [Day Context]
+      summary: Return saved daily context
+      responses:
+        '200':
+          description: Saved context with warnings for degraded integration state when needed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyContextResponse'
+              example:
+                date: '2026-03-10'
+                timezone: Europe/Uzhgorod
+                calendar_events:
+                  - title: Planning meeting
+                    start_time: '2026-03-10T09:00:00+02:00'
+                    end_time: '2026-03-10T10:00:00+02:00'
+                    location: Main office
+                    attendees:
+                      - person@example.com
+                todo_items: []
+                reflection: Today felt busy but hopeful.
+                warnings:
+                  - Google Tasks refresh failed; showing saved manual input.
+                updated_at: '2026-03-10T18:10:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: No saved context exists for the requested date.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: No saved context for this date.
+                code: DAY_CONTEXT_NOT_FOUND
+  /api/day/{date}/generate:
+    parameters:
+      - $ref: '#/components/parameters/DateParam'
+    post:
+      tags: [Jobs]
+      summary: Create or reuse a generation job for a day
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Existing active job reused because a non-terminal job already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationJobEnvelope'
+        '201':
+          description: New generation job created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerationJobEnvelope'
+              example:
+                job:
+                  id: uuid
+                  user_id: uuid
+                  date: '2026-03-10'
+                  job_type: daily_generation
+                  status: queued
+                  attempt_number: 1
+                  current_stage_retry_count: 0
+                  idempotency_key: user-id:2026-03-10:1
+                  trigger_source: user
+                  leased_by: null
+                  lease_expires_at: null
+                  heartbeat_at: null
+                  last_completed_stage: null
+                  next_retry_at: null
+                  error_code: null
+                  error_message: null
+                  result_strip_id: null
+                  result_weekly_issue_id: null
+                  created_at: '2026-03-10T18:10:00Z'
+                  updated_at: '2026-03-10T18:10:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          description: No usable context exists for generation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: No usable daily context is available for generation.
+                code: NO_INPUT_CONTEXT
+  /api/day/{date}/status:
+    parameters:
+      - $ref: '#/components/parameters/DateParam'
+    get:
+      tags: [Jobs]
+      summary: Poll generation status for a day
+      responses:
+        '200':
+          description: Current job state plus the latest available strip summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+              example:
+                job:
+                  id: uuid
+                  user_id: uuid
+                  date: '2026-03-10'
+                  job_type: daily_generation
+                  status: rendering_panels
+                  attempt_number: 1
+                  current_stage_retry_count: 0
+                  idempotency_key: user-id:2026-03-10:1
+                  trigger_source: user
+                  leased_by: worker-1
+                  lease_expires_at: '2026-03-10T18:13:00Z'
+                  heartbeat_at: '2026-03-10T18:11:30Z'
+                  last_completed_stage: validating
+                  next_retry_at: null
+                  error_code: null
+                  error_message: null
+                  result_strip_id: null
+                  result_weekly_issue_id: null
+                  created_at: '2026-03-10T18:10:00Z'
+                  updated_at: '2026-03-10T18:11:30Z'
+                latest_strip: null
+                warnings: []
+                can_regenerate: false
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: No generation job or strip exists for the date.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: No generation job or strip exists for this date.
+                code: STATUS_NOT_FOUND
+  /api/strips/{date}:
+    parameters:
+      - $ref: '#/components/parameters/DateParam'
+    get:
+      tags: [Strips]
+      summary: Return an authenticated strip view for a date
+      description: |
+        The authenticated strip view includes the strip record plus signed media references.
+        Raw private asset paths remain internal storage details.
+      responses:
+        '200':
+          description: Strip found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicStripResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: No strip exists for the requested date.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: No strip exists for this date.
+                code: STRIP_NOT_FOUND
+  /api/strips:
+    get:
+      tags: [Strips]
+      summary: List strips in a date range
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Strips within the requested date range.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComicStripCollectionResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+  /api/issues/{iso_week}:
+    parameters:
+      - $ref: '#/components/parameters/IsoWeekParam'
+    get:
+      tags: [Weekly Issues]
+      summary: Return a weekly issue by ISO week
+      responses:
+        '200':
+          description: Weekly issue found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyIssue'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: No weekly issue exists for the requested ISO week.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/issues:
+    get:
+      tags: [Weekly Issues]
+      summary: List weekly issues for the authenticated user
+      responses:
+        '200':
+          description: Weekly issues in reverse chronological or implementation-defined user order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyIssueCollectionResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+  /api/torn-pages:
+    get:
+      tags: [Torn Pages]
+      summary: List torn pages for the authenticated user
+      responses:
+        '200':
+          description: Torn pages.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TornPageCollectionResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+  /api/torn-pages/{id}/unlock:
+    parameters:
+      - $ref: '#/components/parameters/UuidPathParam'
+    post:
+      tags: [Torn Pages]
+      summary: Unlock a torn page via reflection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TornPageUnlockRequest'
+            example:
+              response_text: I mostly remember being tired but proud that I finished the release.
+      responses:
+        '201':
+          description: Torn page unlocked and retroactive generation job created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TornPageUnlockResponse'
+              example:
+                torn_page_id: uuid
+                status: unlocked
+                job:
+                  id: uuid
+                  user_id: uuid
+                  date: '2026-03-07'
+                  job_type: retroactive_generation
+                  status: queued
+                  attempt_number: 1
+                  current_stage_retry_count: 0
+                  idempotency_key: user-id:2026-03-07:retro-1
+                  trigger_source: torn_page_unlock
+                  leased_by: null
+                  lease_expires_at: null
+                  heartbeat_at: null
+                  last_completed_stage: null
+                  next_retry_at: null
+                  error_code: null
+                  error_message: null
+                  result_strip_id: null
+                  result_weekly_issue_id: null
+                  created_at: '2026-03-10T18:15:00Z'
+                  updated_at: '2026-03-10T18:15:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          description: The torn page is not currently eligible for unlock.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: This torn page is not eligible for unlock.
+                code: TORN_PAGE_NOT_UNLOCKABLE
+  /api/strips/{date}/share:
+    parameters:
+      - $ref: '#/components/parameters/DateParam'
+    post:
+      tags: [Sharing]
+      summary: Create a public share for an existing strip
+      requestBody:
+        required: false
+      responses:
+        '201':
+          description: Share created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLinkResponse'
+              example:
+                share_id: shr_abc123
+                share_url: https://dayframe.app/s/shr_abc123
+                is_active: true
+                created_at: '2026-03-10T18:16:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Strip not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: No strip exists for this date.
+                code: STRIP_NOT_FOUND
+  /api/shares/{share_id}:
+    parameters:
+      - name: share_id
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      tags: [Sharing]
+      summary: Revoke a public share immediately
+      responses:
+        '200':
+          description: Share revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLinkRevokeResponse'
+              example:
+                share_id: shr_abc123
+                is_active: false
+                revoked_at: '2026-03-10T18:20:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Authenticated user does not own the share link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: You do not own this share link.
+                code: SHARE_FORBIDDEN
+        '404':
+          description: Share not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Share not found.
+                code: SHARE_NOT_FOUND
+  /s/{share_id}:
+    parameters:
+      - name: share_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Sharing]
+      summary: Public share page
+      security: []
+      responses:
+        '200':
+          description: Public share page HTML.
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: Share does not exist or has been revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: dayframe_session
+  parameters:
+    DateParam:
+      name: date
+      in: path
+      required: true
+      schema:
+        type: string
+        format: date
+      description: ISO 8601 calendar date in the user's local timeline.
+    IsoWeekParam:
+      name: iso_week
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$'
+    UuidPathParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    UnauthorizedError:
+      description: Request is unauthenticated.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      $ref: './schemas/shared.schema.json#/$defs/errorResponse'
+    DayContext:
+      $ref: './schemas/DayContext.schema.json'
+    DailyContextUpsertRequest:
+      $ref: './schemas/DailyContextUpsertRequest.schema.json'
+    DailyContextResponse:
+      $ref: './schemas/DailyContextResponse.schema.json'
+    GenerationJob:
+      $ref: './schemas/GenerationJob.schema.json'
+    JobStatusResponse:
+      $ref: './schemas/JobStatusResponse.schema.json'
+    TornPageUnlockRequest:
+      $ref: './schemas/TornPageUnlockRequest.schema.json'
+    TornPageUnlockResponse:
+      $ref: './schemas/TornPageUnlockResponse.schema.json'
+    ShareLinkResponse:
+      $ref: './schemas/ShareLinkResponse.schema.json'
+    UserPreferences:
+      type: object
+      properties:
+        comic_style:
+          type: string
+          default: adventure
+        tone:
+          type: string
+          default: humorous
+        language:
+          type: string
+          default: en
+      required:
+        - comic_style
+        - tone
+        - language
+    UserPreferencesPatchRequest:
+      $ref: '#/components/schemas/UserPreferences'
+    UserPreferencesUpdateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        preferences:
+          $ref: '#/components/schemas/UserPreferences'
+      required:
+        - id
+        - preferences
+    UserMeResponse:
+      type: object
+      description: |
+        Authenticated user read model. The current SPEC names this endpoint but does
+        not yet lock the exact response shape, so the success body intentionally
+        remains open.
+      additionalProperties: true
+      examples:
+        default:
+          value:
+            id: uuid
+            email: person@example.com
+            display_name: Ivan
+            preferences:
+              comic_style: adventure
+              tone: humorous
+              language: en
+    UnspecifiedObjectResponse:
+      type: object
+      description: |
+        Placeholder object shape for endpoints whose existence and semantics are
+        fixed by SPEC.md, but whose exact success payload has not yet been locked.
+      additionalProperties: true
+    ComicStripCollectionResponse:
+      type: array
+      items:
+        $ref: '#/components/schemas/UnspecifiedObjectResponse'
+    WeeklyIssueCollectionResponse:
+      type: array
+      items:
+        $ref: '#/components/schemas/UnspecifiedObjectResponse'
+    TornPageCollectionResponse:
+      type: array
+      items:
+        $ref: '#/components/schemas/UnspecifiedObjectResponse'
+    GenerationJobEnvelope:
+      type: object
+      properties:
+        job:
+          $ref: '#/components/schemas/GenerationJob'
+      required:
+        - job
+    PrivateMediaReference:
+      type: object
+      properties:
+        asset_type:
+          type: string
+          enum:
+            - panel_image
+            - composed_strip
+            - weekly_cover
+        signed_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+      required:
+        - asset_type
+        - signed_url
+        - expires_at
+    ComicStripResponse:
+      type: object
+      description: |
+        Authenticated strip read model. The endpoint is required by SPEC.md, but
+        its exact success payload is not yet locked there. Implementations must
+        keep private media private and surface user-facing media via signed URLs.
+      additionalProperties: true
+    WeeklyIssue:
+      type: object
+      description: |
+        Weekly issue read model. SPEC.md defines the domain object and endpoint
+        existence, but not the exact authenticated response shape, so this schema
+        intentionally remains open.
+      additionalProperties: true
+    TornPage:
+      type: object
+      description: |
+        Torn-page read model. SPEC.md defines the domain object and endpoint
+        existence, but not the exact authenticated response shape, so this schema
+        intentionally remains open.
+      additionalProperties: true
+    ShareLinkRevokeResponse:
+      type: object
+      properties:
+        share_id:
+          type: string
+        is_active:
+          type: boolean
+        revoked_at:
+          type: string
+          format: date-time
+      required:
+        - share_id
+        - is_active
+        - revoked_at

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/DayContext.schema.json",
+  "title": "DayContext",
+  "description": "Canonical raw daily input contract for DayFrame v1. Versioning note: preserve existing keys and meanings when extending.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "shared.schema.json#/$defs/uuid"
+    },
+    "user_id": {
+      "$ref": "shared.schema.json#/$defs/uuid"
+    },
+    "date": {
+      "$ref": "shared.schema.json#/$defs/date"
+    },
+    "timezone": {
+      "$ref": "shared.schema.json#/$defs/timezone"
+    },
+    "calendar_events": {
+      "type": "array",
+      "items": {
+        "$ref": "shared.schema.json#/$defs/calendarEvent"
+      }
+    },
+    "todo_items": {
+      "type": "array",
+      "items": {
+        "$ref": "shared.schema.json#/$defs/todoItem"
+      }
+    },
+    "reflection": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 1000
+    },
+    "source_status": {
+      "$ref": "shared.schema.json#/$defs/sourceStatus"
+    },
+    "created_at": {
+      "$ref": "shared.schema.json#/$defs/dateTime"
+    },
+    "expires_at": {
+      "$ref": "shared.schema.json#/$defs/dateTime"
+    }
+  },
+  "required": [
+    "id",
+    "user_id",
+    "date",
+    "timezone",
+    "calendar_events",
+    "todo_items",
+    "reflection",
+    "source_status",
+    "created_at",
+    "expires_at"
+  ]
+}

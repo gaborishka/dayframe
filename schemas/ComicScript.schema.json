@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/ComicScript.schema.json",
+  "title": "ComicScript",
+  "description": "Locked anonymized output contract from the private DayFrame script model in v1. Versioning note: preserve current fields and enum semantics so Agent 1 can integrate outputs without contract drift.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "$ref": "shared.schema.json#/$defs/uuid"
+    },
+    "day_context_id": {
+      "$ref": "shared.schema.json#/$defs/uuid"
+    },
+    "user_id": {
+      "$ref": "shared.schema.json#/$defs/uuid"
+    },
+    "date": {
+      "$ref": "shared.schema.json#/$defs/date"
+    },
+    "title": {
+      "type": "string"
+    },
+    "tone": {
+      "type": "string"
+    },
+    "panels": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 6,
+      "items": {
+        "$ref": "shared.schema.json#/$defs/comicPanel"
+      }
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "$ref": "shared.schema.json#/$defs/storyCharacter"
+      }
+    },
+    "arc_hooks": {
+      "$ref": "shared.schema.json#/$defs/arcHooks"
+    },
+    "generation_metadata": {
+      "$ref": "shared.schema.json#/$defs/generationMetadata"
+    }
+  },
+  "required": [
+    "id",
+    "day_context_id",
+    "user_id",
+    "date",
+    "title",
+    "tone",
+    "panels",
+    "characters",
+    "arc_hooks",
+    "generation_metadata"
+  ]
+}

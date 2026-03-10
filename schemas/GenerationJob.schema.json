@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/GenerationJob.schema.json",
+  "title": "GenerationJob",
+  "description": "Canonical async job contract for DayFrame v1. Versioning note: reuse the exact status and stage vocabulary from SPEC.md.",
+  "$ref": "shared.schema.json#/$defs/generationJob"
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/TornPageUnlockRequest.schema.json",
+  "title": "TornPageUnlockRequest",
+  "description": "Canonical request body for POST /api/torn-pages/{id}/unlock in DayFrame v1. Versioning note: v1 supports only the reflection challenge type.",
+  "type": "object",
+  "properties": {
+    "response_text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "response_text"
+  ]
+}

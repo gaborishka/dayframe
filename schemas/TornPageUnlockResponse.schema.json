@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dayframe.local/schemas/TornPageUnlockResponse.schema.json",
+  "title": "TornPageUnlockResponse",
+  "description": "Canonical response body for torn-page unlock operations in DayFrame v1. Versioning note: preserve the status vocabulary and job linkage behavior.",
+  "type": "object",
+  "properties": {
+    "torn_page_id": {
+      "$ref": "shared.schema.json#/$defs/uuid"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "locked",
+        "unlocked",
+        "generated"
+      ]
+    },
+    "job": {
+      "oneOf": [
+        {
+          "$ref": "GenerationJob.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "torn_page_id",
+    "status",
+    "job"
+  ]
+}
