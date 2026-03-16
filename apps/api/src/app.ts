@@ -8,6 +8,7 @@ import { defaultUserPreferences, loadApiEnv } from "@dayframe/config";
 import { assertSchema } from "@dayframe/contracts";
 
 import { comicStrips, getDb, shareLinks, users } from "./db/index.js";
+import { concreteUrl } from "./lib/urls.js";
 import {
   authenticateFromCallback,
   buildGoogleAuthUrl,
@@ -22,14 +23,15 @@ import {
   createShareLink,
   getDayContextForUser,
   getLatestStripForUserDate,
+  getStripReadModelForUserDate,
   getUserMe,
   listStripsForRange,
   mapDailyContextResponse,
   mapGenerationJob,
-  mapStripReadModel,
   upsertDayContextForUser
 } from "./services/jobs.js";
 import { verifySignedStripUrl } from "./services/storage.js";
+import { getWeeklyIssueReadModel, listTornPageReadModels, listWeeklyIssueReadModels, unlockTornPage } from "./services/weekly.js";
 
 const contextSchema = z.object({
   manual_todos: z.array(
@@ -49,12 +51,28 @@ const preferenceSchema = z.object({
 
 const env = loadApiEnv(import.meta.dirname);
 
+function requestBaseUrl(request: express.Request) {
+  const forwardedProto = request.headers["x-forwarded-proto"]?.toString().split(",")[0]?.trim();
+  const forwardedHost = request.headers["x-forwarded-host"]?.toString().split(",")[0]?.trim();
+  const protocol = forwardedProto || request.protocol;
+  const host = forwardedHost || request.get("host") || "localhost";
+  return `${protocol}://${host}`;
+}
+
+function resolveAppBaseUrl(request: express.Request) {
+  return concreteUrl(env.APP_BASE_URL) ?? requestBaseUrl(request);
+}
+
+function resolveApiBaseUrl(request: express.Request) {
+  return concreteUrl(env.API_BASE_URL) ?? requestBaseUrl(request);
+}
+
 export function createApp() {
   const app = express();
 
   app.use(
     cors({
-      origin: env.CORS_ALLOWED_ORIGIN,
+      origin: concreteUrl(env.CORS_ALLOWED_ORIGIN) ?? true,
       credentials: true
     })
   );
@@ -65,9 +83,9 @@ export function createApp() {
     response.json({ ok: true });
   });
 
-  app.post("/auth/google", (_request, response) => {
+  app.post("/auth/google", (request, response) => {
     if (!hasRealGoogleOAuth(env)) {
-      response.redirect(302, `${env.API_BASE_URL}/auth/callback?state=dev-scaffold`);
+      response.redirect(302, `${resolveApiBaseUrl(request)}/auth/callback?state=dev-scaffold`);
       return;
     }
 
@@ -82,7 +100,7 @@ export function createApp() {
       );
       const token = await signSessionCookie({ sub: user.id, email: user.email }, env);
       setSessionCookie(response, token, env);
-      response.redirect(302, env.APP_BASE_URL);
+      response.redirect(302, resolveAppBaseUrl(request));
     } catch (error) {
       response.status(400).json({
         error: error instanceof Error ? error.message : "Authentication failed.",
@@ -150,11 +168,34 @@ export function createApp() {
     <main>
       <h1>${strip.title}</h1>
       <div class="frame">
-        ${strip.composedSvg}
+        <img src="${share.publicAssetUrl ?? `${resolveApiBaseUrl(request)}/public/shares/${share.shareId}/strip.svg`}" alt="${strip.title}" />
       </div>
     </main>
   </body>
 </html>`);
+  });
+
+  app.get("/public/shares/:shareId/strip.svg", async (request, response) => {
+    const share = await getDb().query.shareLinks.findFirst({
+      where: and(eq(shareLinks.shareId, request.params.shareId), eq(shareLinks.isActive, true))
+    });
+
+    if (!share) {
+      response.status(404).json({ error: "Share not found.", code: "SHARE_NOT_FOUND" });
+      return;
+    }
+
+    const strip = await getDb().query.comicStrips.findFirst({
+      where: eq(comicStrips.id, share.comicStripId)
+    });
+
+    if (!strip) {
+      response.status(404).json({ error: "Share not found.", code: "SHARE_NOT_FOUND" });
+      return;
+    }
+
+    response.setHeader("content-type", "image/svg+xml");
+    response.send(strip.composedSvg);
   });
 
   app.use("/api", (request, response, next) => requireAuth(env, request, response, next));
@@ -257,13 +298,13 @@ export function createApp() {
   });
 
   app.get("/api/strips/:date", async (request, response) => {
-    const strip = await getLatestStripForUserDate((request as any).user.id, request.params.date);
+    const strip = await getStripReadModelForUserDate((request as any).user.id, request.params.date, env, requestBaseUrl(request));
     if (!strip) {
       response.status(404).json({ error: "No strip exists for this date.", code: "STRIP_NOT_FOUND" });
       return;
     }
 
-    response.json(mapStripReadModel(strip, env));
+    response.json(strip);
   });
 
   app.get("/api/strips", async (request, response) => {
@@ -279,24 +320,48 @@ export function createApp() {
       return;
     }
 
-    const strips = await listStripsForRange((request as any).user.id, query.data.from, query.data.to, env);
+    const strips = await listStripsForRange((request as any).user.id, query.data.from, query.data.to, env, requestBaseUrl(request));
     response.json(strips);
   });
 
-  app.get("/api/issues/:isoWeek", (_request, response) => {
-    response.status(404).json({ error: "No weekly issue exists for the requested ISO week.", code: "ISSUE_NOT_FOUND" });
+  app.get("/api/issues/:isoWeek", async (request, response) => {
+    const issue = await getWeeklyIssueReadModel((request as any).user.id, request.params.isoWeek, env, requestBaseUrl(request));
+    if (!issue) {
+      response.status(404).json({ error: "No weekly issue exists for the requested ISO week.", code: "ISSUE_NOT_FOUND" });
+      return;
+    }
+
+    response.json(issue);
   });
 
-  app.get("/api/issues", (_request, response) => {
-    response.json([]);
+  app.get("/api/issues", async (request, response) => {
+    const issues = await listWeeklyIssueReadModels((request as any).user.id, env, requestBaseUrl(request));
+    response.json(issues.filter(Boolean));
   });
 
-  app.get("/api/torn-pages", (_request, response) => {
-    response.json([]);
+  app.get("/api/torn-pages", async (request, response) => {
+    response.json(await listTornPageReadModels((request as any).user.id));
   });
 
-  app.post("/api/torn-pages/:id/unlock", (_request, response) => {
-    response.status(422).json({ error: "This torn page is not eligible for unlock.", code: "TORN_PAGE_NOT_UNLOCKABLE" });
+  app.post("/api/torn-pages/:id/unlock", async (request, response) => {
+    const body = z
+      .object({
+        response_text: z.string().min(1)
+      })
+      .safeParse(request.body);
+
+    if (!body.success) {
+      response.status(422).json({ error: "This torn page is not eligible for unlock.", code: "TORN_PAGE_NOT_UNLOCKABLE" });
+      return;
+    }
+
+    const result = await unlockTornPage((request as any).user.id, request.params.id, body.data.response_text, env);
+    if (!result) {
+      response.status(422).json({ error: "This torn page is not eligible for unlock.", code: "TORN_PAGE_NOT_UNLOCKABLE" });
+      return;
+    }
+
+    response.status(201).json(result);
   });
 
   app.post("/api/strips/:date/share", async (request, response) => {
@@ -306,7 +371,7 @@ export function createApp() {
       return;
     }
 
-    const payload = await createShareLink((request as any).user.id, strip.id, env.APP_BASE_URL);
+    const payload = await createShareLink((request as any).user.id, strip.id, env, requestBaseUrl(request));
     response.status(201).json(payload);
   });
 

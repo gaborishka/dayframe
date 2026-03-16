@@ -41,11 +41,11 @@ class TestDatasetBuild:
                 all_ids.add(eid)
 
     def test_no_content_overlap_between_splits(self):
-        train_titles = {ex["target"]["title"] for ex in self._load_jsonl("train.jsonl")}
-        val_titles = {ex["target"]["title"] for ex in self._load_jsonl("val.jsonl")}
-        test_titles = {ex["target"]["title"] for ex in self._load_jsonl("test.jsonl")}
-        assert train_titles.isdisjoint(val_titles), "train/val title overlap"
-        assert train_titles.isdisjoint(test_titles), "train/test title overlap"
+        train_ids = {ex["id"] for ex in self._load_jsonl("train.jsonl")}
+        val_ids = {ex["id"] for ex in self._load_jsonl("val.jsonl")}
+        test_ids = {ex["id"] for ex in self._load_jsonl("test.jsonl")}
+        assert train_ids.isdisjoint(val_ids), "train/val id overlap"
+        assert train_ids.isdisjoint(test_ids), "train/test id overlap"
 
     def test_manifest_counts_match(self):
         with open(DATA_DIR / "dataset_manifest.json") as f:

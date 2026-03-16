@@ -20,7 +20,9 @@ import type {
   DayContext,
   GenerationJob,
   GenerationMetadata,
+  ShareLinkResponse,
   StoryCharacter,
+  TornPageStatus,
   UserPreferences
 } from "@dayframe/contracts";
 
@@ -28,6 +30,14 @@ type PanelAsset = {
   sequence: number;
   asset_path: string;
   svg: string;
+};
+
+type StripPanelImage = {
+  sequence: number;
+  asset_path: string;
+  width: number;
+  height: number;
+  render_status: "ready" | "placeholder";
 };
 
 export const users = pgTable("users", {
@@ -55,6 +65,7 @@ export const storyArcs = pgTable("story_arcs", {
   activeThreads: jsonb("active_threads").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   recurringCharacters: jsonb("recurring_characters").$type<StoryCharacter[]>().notNull().default(sql`'[]'::jsonb`),
   lastArcHooks: jsonb("last_arc_hooks").$type<ArcHooks | null>(),
+  chapterCount: integer("chapter_count").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
@@ -106,6 +117,7 @@ export const generationJobs = pgTable("generation_jobs", {
   warnings: jsonb("warnings").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   candidateScript: jsonb("candidate_script").$type<ComicScript | null>(),
   panelAssets: jsonb("panel_assets").$type<PanelAsset[] | null>(),
+  jobPayload: jsonb("job_payload").$type<Record<string, unknown> | null>(),
   composedStripSvg: text("composed_strip_svg"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -136,6 +148,10 @@ export const comicStrips = pgTable("comic_strips", {
     .notNull()
     .references(() => comicScripts.id, { onDelete: "cascade" }),
   date: date("date").notNull(),
+  status: text("status").notNull().default("ready"),
+  panelImages: jsonb("panel_images").$type<StripPanelImage[]>().notNull().default(sql`'[]'::jsonb`),
+  composedStripAssetPath: text("composed_strip_asset_path"),
+  failureCode: text("failure_code"),
   title: text("title").notNull(),
   tone: text("tone").notNull(),
   panels: jsonb("panels").$type<ComicPanel[]>().notNull(),
@@ -158,9 +174,62 @@ export const shareLinks = pgTable("share_links", {
     .notNull()
     .references(() => comicStrips.id, { onDelete: "cascade" }),
   isActive: boolean("is_active").notNull().default(true),
+  publicAssetPath: text("public_asset_path"),
+  publicAssetUrl: text("public_asset_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   revokedAt: timestamp("revoked_at", { withTimezone: true })
 });
+
+export const weeklyIssues = pgTable(
+  "weekly_issues",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    isoWeek: text("iso_week").notNull(),
+    weekStart: date("week_start").notNull(),
+    weekEnd: date("week_end").notNull(),
+    issueTitle: text("issue_title").notNull(),
+    arcSummary: text("arc_summary").notNull(),
+    coverImageUrl: text("cover_image_url"),
+    stripIds: jsonb("strip_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    tornPageIds: jsonb("torn_page_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    status: text("status").notNull().$type<"in_progress" | "compiled" | "shared">().default("in_progress"),
+    compiledAt: timestamp("compiled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    userWeekUnique: uniqueIndex("weekly_issues_user_week_idx").on(table.userId, table.isoWeek)
+  })
+);
+
+export const tornPages = pgTable(
+  "torn_pages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    weeklyIssueId: uuid("weekly_issue_id")
+      .notNull()
+      .references(() => weeklyIssues.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    date: date("date").notNull(),
+    status: text("status").notNull().$type<TornPageStatus>().default("locked"),
+    unlockChallenge: jsonb("unlock_challenge")
+      .$type<{ type: "reflection"; prompt: string }>()
+      .notNull(),
+    unlockResponse: text("unlock_response"),
+    retroactiveStripId: uuid("retroactive_strip_id").references(() => comicStrips.id),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    userDateUnique: uniqueIndex("torn_pages_user_date_idx").on(table.userId, table.date)
+  })
+);
 
 export type DbUser = typeof users.$inferSelect;
 export type DbDayContext = typeof dayContexts.$inferSelect;

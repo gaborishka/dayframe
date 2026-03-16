@@ -7,6 +7,9 @@
     "db:stop": "docker compose down",
     "db:migrate": "pnpm --filter @dayframe/api db:migrate",
     "dev": "concurrently -k -n web,api,worker -c magenta,cyan,yellow \"pnpm --filter @dayframe/web dev\" \"pnpm --filter @dayframe/api dev\" \"pnpm --filter @dayframe/worker dev\"",
+    "do:check": "bash ./scripts/do/check.sh",
+    "do:render-spec": "node ./scripts/do/render-app-spec.mjs",
+    "do:deploy": "bash ./scripts/do/deploy.sh",
     "test": "pnpm -r --if-present test",
     "test:e2e": "node ./scripts/run-e2e.mjs"
   },

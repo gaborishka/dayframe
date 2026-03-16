@@ -181,6 +181,48 @@ export type PrivateMediaReference = {
   expires_at: ISODateTime;
 };
 
+export type ShareLinkResponse = {
+  share_id: string;
+  share_url: string;
+  is_active: boolean;
+  created_at: ISODateTime;
+};
+
+export type WeeklyIssueStatus = "in_progress" | "compiled" | "shared";
+
+export type TornPageStatus = "locked" | "unlocked" | "generated";
+
+export type WeeklyIssueReadModel = {
+  id: UUID;
+  iso_week: string;
+  week_start: ISODate;
+  week_end: ISODate;
+  issue_title: string;
+  arc_summary: string;
+  cover_image_url: string | null;
+  strip_ids: UUID[];
+  torn_page_ids: UUID[];
+  status: WeeklyIssueStatus;
+  compiled_at: ISODateTime | null;
+  strips: StripReadModel[];
+  torn_pages: TornPageReadModel[];
+};
+
+export type TornPageReadModel = {
+  id: UUID;
+  weekly_issue_id: UUID;
+  user_id: UUID;
+  date: ISODate;
+  status: TornPageStatus;
+  unlock_challenge: {
+    type: "reflection";
+    prompt: string;
+  };
+  unlock_response: string | null;
+  retroactive_strip_id: UUID | null;
+  unlocked_at: ISODateTime | null;
+};
+
 export type UserPreferences = {
   comic_style: string;
   tone: string;
@@ -204,5 +246,6 @@ export type StripReadModel = {
   arc_hooks: ArcHooks;
   generation_metadata: GenerationMetadata;
   media: PrivateMediaReference[];
+  share: ShareLinkResponse | null;
   created_at: ISODateTime;
 };

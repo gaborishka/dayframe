@@ -13,11 +13,20 @@ const userPreferencesSchema = z.object({
   language: z.string().default("en")
 });
 
+function runtimeUrlSchema(defaultValue: string) {
+  return z
+    .string()
+    .default(defaultValue)
+    .refine((value) => value === "" || value.startsWith("${") || URL.canParse(value), {
+      message: "Invalid URL"
+    });
+}
+
 const sharedSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  APP_BASE_URL: z.url().default("http://localhost:3000"),
-  API_BASE_URL: z.url().default("http://localhost:4000"),
-  WEB_ORIGIN: z.url().default("http://localhost:3000"),
+  APP_BASE_URL: runtimeUrlSchema("http://localhost:3000"),
+  API_BASE_URL: runtimeUrlSchema("http://localhost:4000"),
+  WEB_ORIGIN: runtimeUrlSchema("http://localhost:3000"),
   LOG_LEVEL: z.string().default("info"),
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRES_IN: z.string().default("7d"),
@@ -31,10 +40,10 @@ const sharedSchema = z.object({
 const apiSchema = sharedSchema.extend({
   API_PORT: z.coerce.number().int().positive().default(4000),
   API_HOST: z.string().default("0.0.0.0"),
-  CORS_ALLOWED_ORIGIN: z.url().default("http://localhost:3000"),
+  CORS_ALLOWED_ORIGIN: runtimeUrlSchema("http://localhost:3000"),
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
-  GOOGLE_CALLBACK_URL: z.url().default("http://localhost:4000/auth/callback"),
+  GOOGLE_CALLBACK_URL: runtimeUrlSchema("http://localhost:4000/auth/callback"),
   GOOGLE_SCOPES: z.string().default(
     "openid,email,profile,https://www.googleapis.com/auth/calendar.readonly,https://www.googleapis.com/auth/tasks.readonly"
   ),

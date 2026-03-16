@@ -16,10 +16,14 @@ import {
   dayContexts,
   generationJobs,
   getDb,
-  storyArcs
+  storyArcs,
+  tornPages
 } from "../db/index.js";
-import { buildWeeklyContext, markJobReady, updateJobStage } from "./jobs.js";
+import { syncGoogleDaySources } from "../integrations/google.js";
+import { buildWeeklyContext, markJobReady, markWeeklyJobReady, updateJobStage } from "./jobs.js";
 import { buildDefaultStoryArc, createDeterministicComicScript } from "./mock-model.js";
+import { uploadPrivateStripAsset } from "./storage.js";
+import { compileWeeklyIssue, createOrReuseWeeklyCompilationJob } from "./weekly.js";
 
 type PipelineError = {
   code: string;
@@ -195,13 +199,77 @@ export async function buildEnrichedDayContext(job: typeof generationJobs.$inferS
 }
 
 export async function runPipelineStage(job: typeof generationJobs.$inferSelect, workerId: string, env: ApiEnv) {
+  if (job.jobType === "weekly_compilation") {
+    switch (job.status) {
+      case "ingesting": {
+        const context = await getDb().query.dayContexts.findFirst({
+          where: and(eq(dayContexts.userId, job.userId), eq(dayContexts.date, job.date))
+        });
+        const timezone = context?.timezone ?? "Europe/Uzhgorod";
+        return updateJobStage(job.id, workerId, {
+          job_payload: { timezone },
+          status: "storing",
+          last_completed_stage: "ingesting"
+        });
+      }
+      case "storing": {
+        const latest = await getDb().query.generationJobs.findFirst({
+          where: eq(generationJobs.id, job.id)
+        });
+        const timezone = (latest?.jobPayload?.timezone as string | undefined) ?? "Europe/Uzhgorod";
+        const issue = await compileWeeklyIssue(job.userId, job.date, timezone);
+        if (!issue) {
+          throw { code: "WEEKLY_COMPILATION_FAILED", message: "Unable to compile weekly issue." } satisfies PipelineError;
+        }
+        return markWeeklyJobReady(job.id, workerId, issue.id);
+      }
+      default:
+        return job;
+    }
+  }
+
   switch (job.status) {
-    case "ingesting":
+    case "ingesting": {
+      const db = getDb();
+      const context = await db.query.dayContexts.findFirst({
+        where: and(eq(dayContexts.userId, job.userId), eq(dayContexts.date, job.date))
+      });
+      const timezone = context?.timezone ?? "Europe/Uzhgorod";
+      const google = await syncGoogleDaySources(job.userId, job.date, timezone, env);
+      const mergedTodos = [
+        ...(context?.todoItems.filter((item) => item.source === "manual") ?? []),
+        ...google.taskItems
+      ];
+      const manualPresent = mergedTodos.some((item) => item.source === "manual") || Boolean(context?.reflection);
+
+      if (!manualPresent && mergedTodos.length === 0 && google.calendarEvents.length === 0) {
+        throw { code: "NO_INPUT_CONTEXT", message: "No usable daily context is available for generation." } satisfies PipelineError;
+      }
+
+      if (context) {
+        await db
+          .update(dayContexts)
+          .set({
+            timezone,
+            calendarEvents: google.calendarEvents,
+            todoItems: mergedTodos,
+            sourceStatus: {
+              calendar_fetch_status: google.sourceStatus.calendar_fetch_status,
+              tasks_fetch_status: google.sourceStatus.tasks_fetch_status,
+              manual_input_status: manualPresent ? "present" : "empty"
+            },
+            warnings: google.warnings,
+            updatedAt: new Date()
+          })
+          .where(eq(dayContexts.id, context.id));
+      }
+
       return updateJobStage(job.id, workerId, {
         status: "generating_script",
         last_completed_stage: "ingesting",
         current_stage_retry_count: 0
       });
+    }
     case "generating_script": {
       const { enriched } = await buildEnrichedDayContext(job);
       const script = createDeterministicComicScript(enriched);
@@ -322,6 +390,8 @@ export async function runPipelineStage(job: typeof generationJobs.$inferSelect, 
         })
         .returning();
 
+      const privateAsset = await uploadPrivateStripAsset(latest.userId, latest.date, latest.composedStripSvg, env);
+
       const [storedStrip] = await db
         .insert(comicStrips)
         .values({
@@ -329,6 +399,16 @@ export async function runPipelineStage(job: typeof generationJobs.$inferSelect, 
           dayContextId: dayContext.id,
           comicScriptId: storedScript.id,
           date: latest.date,
+          status: "ready",
+          panelImages: (latest.panelAssets ?? []).map((panel) => ({
+            sequence: panel.sequence,
+            asset_path: panel.asset_path,
+            width: 960,
+            height: 720,
+            render_status: "ready"
+          })),
+          composedStripAssetPath: privateAsset.assetPath,
+          failureCode: null,
           title: latest.candidateScript.title,
           tone: latest.candidateScript.tone,
           panels: latest.candidateScript.panels,
@@ -362,6 +442,7 @@ export async function runPipelineStage(job: typeof generationJobs.$inferSelect, 
             activeThreads: enriched.story_arc_snapshot.active_threads,
             recurringCharacters: enriched.story_arc_snapshot.recurring_characters,
             lastArcHooks: latest.candidateScript.arc_hooks,
+            chapterCount: arc.chapterCount + 1,
             updatedAt: new Date()
           })
           .where(eq(storyArcs.id, arc.id));
@@ -372,7 +453,8 @@ export async function runPipelineStage(job: typeof generationJobs.$inferSelect, 
           worldSetting: enriched.story_arc_snapshot.world_setting,
           activeThreads: enriched.story_arc_snapshot.active_threads,
           recurringCharacters: enriched.story_arc_snapshot.recurring_characters,
-          lastArcHooks: latest.candidateScript.arc_hooks
+          lastArcHooks: latest.candidateScript.arc_hooks,
+          chapterCount: 1
         });
       }
 
@@ -384,6 +466,18 @@ export async function runPipelineStage(job: typeof generationJobs.$inferSelect, 
         })
         .where(eq(dayContexts.id, dayContext.id));
 
+      if (latest.jobType === "retroactive_generation") {
+        await db
+          .update(tornPages)
+          .set({
+            status: "generated",
+            retroactiveStripId: storedStrip.id,
+            updatedAt: new Date()
+          })
+          .where(and(eq(tornPages.userId, latest.userId), eq(tornPages.date, latest.date)));
+      }
+
+      await createOrReuseWeeklyCompilationJob(latest.userId, latest.date, dayContext.timezone);
       return markJobReady(job.id, workerId, storedStrip.id);
     }
     default:

@@ -7,6 +7,7 @@ import type {
   GenerationJob,
   JobStatusResponse,
   PrivateMediaReference,
+  ShareLinkResponse,
   StripReadModel,
   TodoItem,
   UserMeResponse
@@ -15,12 +16,19 @@ import type { ApiEnv } from "@dayframe/config";
 
 import { comicStrips, dayContexts, generationJobs, getDb, shareLinks, storyArcs, users } from "../db/index.js";
 import { dayIndexInWeek, isoWeekFromDate } from "../lib/date.js";
-import { createSignedStripUrl } from "./storage.js";
+import { concreteUrl } from "../lib/urls.js";
+import { createSignedStripUrl, publishPublicShareArtifact } from "./storage.js";
 
 type DbLikeJob = typeof generationJobs.$inferSelect;
 
 function firstRow(result: unknown) {
   return ((result as Record<string, unknown>[] | undefined) ?? [])[0] as DbLikeJob | undefined;
+}
+
+async function fetchJobById(jobId: string) {
+  return getDb().query.generationJobs.findFirst({
+    where: eq(generationJobs.id, jobId)
+  });
 }
 
 const stageResumeMap = {
@@ -202,8 +210,8 @@ export async function getLatestStripForUserDate(userId: string, date: string) {
   });
 }
 
-export function mapStripReadModel(strip: typeof comicStrips.$inferSelect, env: ApiEnv): StripReadModel {
-  const signed = createSignedStripUrl(strip.id, env);
+export async function mapStripReadModel(strip: typeof comicStrips.$inferSelect, env: ApiEnv, baseUrl?: string): Promise<StripReadModel> {
+  const signed = await createSignedStripUrl(strip.id, strip.composedStripAssetPath, env, baseUrl);
   const media: PrivateMediaReference[] = [
     {
       asset_type: "composed_strip",
@@ -222,7 +230,37 @@ export function mapStripReadModel(strip: typeof comicStrips.$inferSelect, env: A
     arc_hooks: strip.arcHooks,
     generation_metadata: strip.generationMetadata,
     media,
+    share: null,
     created_at: strip.createdAt.toISOString()
+  };
+}
+
+function mapShareLinkResponse(share: typeof shareLinks.$inferSelect | null, publicBaseUrl: string): ShareLinkResponse | null {
+  if (!share || !share.isActive) {
+    return null;
+  }
+
+  return {
+    share_id: share.shareId,
+    share_url: `${publicBaseUrl}/s/${share.shareId}`,
+    is_active: share.isActive,
+    created_at: share.createdAt.toISOString()
+  };
+}
+
+export async function getStripReadModelForUserDate(userId: string, date: string, env: ApiEnv, baseUrl?: string) {
+  const strip = await getLatestStripForUserDate(userId, date);
+  if (!strip) {
+    return null;
+  }
+
+  const share = await getDb().query.shareLinks.findFirst({
+    where: and(eq(shareLinks.userId, userId), eq(shareLinks.comicStripId, strip.id), eq(shareLinks.isActive, true))
+  });
+
+  return {
+    ...(await mapStripReadModel(strip, env, baseUrl)),
+    share: mapShareLinkResponse(share ?? null, concreteUrl(baseUrl) ?? concreteUrl(env.API_BASE_URL) ?? "http://localhost:4000")
   };
 }
 
@@ -254,14 +292,14 @@ export async function buildJobStatusResponse(userId: string, date: string, env: 
   };
 }
 
-export async function listStripsForRange(userId: string, from: string, to: string, env: ApiEnv) {
+export async function listStripsForRange(userId: string, from: string, to: string, env: ApiEnv, baseUrl?: string) {
   const db = getDb();
   const strips = await db.query.comicStrips.findMany({
     where: and(eq(comicStrips.userId, userId), gte(comicStrips.date, from), lte(comicStrips.date, to)),
     orderBy: [desc(comicStrips.date)]
   });
 
-  return strips.map((strip) => mapStripReadModel(strip, env));
+  return Promise.all(strips.map((strip) => mapStripReadModel(strip, env, baseUrl)));
 }
 
 export async function claimNextJob(workerId: string, leaseTtlSeconds: number) {
@@ -297,7 +335,8 @@ export async function claimNextJob(workerId: string, leaseTtlSeconds: number) {
     RETURNING generation_jobs.*
   `);
 
-  return firstRow(result) ?? null;
+  const row = firstRow(result) as { id?: string } | undefined;
+  return row?.id ? await fetchJobById(row.id) : null;
 }
 
 export async function heartbeatJob(jobId: string, workerId: string, leaseTtlSeconds: number) {
@@ -312,7 +351,8 @@ export async function heartbeatJob(jobId: string, workerId: string, leaseTtlSeco
     RETURNING *
   `);
 
-  return firstRow(result) ?? null;
+  const row = firstRow(result) as { id?: string } | undefined;
+  return row?.id ? await fetchJobById(row.id) : null;
 }
 
 export async function recoverExpiredJobs() {
@@ -336,16 +376,39 @@ export async function updateJobStage(
   updates: Record<string, unknown>
 ) {
   const db = getDb();
-  const assignments = Object.entries(updates).map(([key, value]) => sql`${sql.raw(key)} = ${value}`);
-  const result = await db.execute(sql`
-    UPDATE generation_jobs
-    SET ${sql.join([...assignments, sql`updated_at = NOW()`], sql`, `)}
-    WHERE id = ${jobId}
-      AND leased_by = ${workerId}
-    RETURNING *
-  `);
+  const keyMap: Record<string, keyof typeof generationJobs.$inferInsert> = {
+    status: "status",
+    candidate_script: "candidateScript",
+    last_completed_stage: "lastCompletedStage",
+    current_stage_retry_count: "currentStageRetryCount",
+    warnings: "warnings",
+    panel_assets: "panelAssets",
+    job_payload: "jobPayload",
+    composed_strip_svg: "composedStripSvg",
+    error_code: "errorCode",
+    error_message: "errorMessage",
+    leased_by: "leasedBy",
+    lease_expires_at: "leaseExpiresAt",
+    heartbeat_at: "heartbeatAt",
+    result_strip_id: "resultStripId",
+    result_weekly_issue_id: "resultWeeklyIssueId",
+    next_retry_at: "nextRetryAt"
+  };
 
-  return firstRow(result) ?? null;
+  const mappedUpdates = Object.fromEntries(
+    Object.entries(updates).map(([key, value]) => [keyMap[key] ?? key, value])
+  ) as Partial<typeof generationJobs.$inferInsert>;
+
+  const [updated] = await db
+    .update(generationJobs)
+    .set({
+      ...mappedUpdates,
+      updatedAt: new Date()
+    })
+    .where(and(eq(generationJobs.id, jobId), eq(generationJobs.leasedBy, workerId)))
+    .returning();
+
+  return updated ?? null;
 }
 
 export async function failJob(jobId: string, workerId: string, errorCode: string, errorMessage: string) {
@@ -363,6 +426,19 @@ export async function markJobReady(jobId: string, workerId: string, stripId: str
   return updateJobStage(jobId, workerId, {
     status: "ready",
     result_strip_id: stripId,
+    last_completed_stage: "storing",
+    leased_by: null,
+    lease_expires_at: null,
+    heartbeat_at: null,
+    error_code: null,
+    error_message: null
+  });
+}
+
+export async function markWeeklyJobReady(jobId: string, workerId: string, weeklyIssueId: string) {
+  return updateJobStage(jobId, workerId, {
+    status: "ready",
+    result_weekly_issue_id: weeklyIssueId,
     last_completed_stage: "storing",
     leased_by: null,
     lease_expires_at: null,
@@ -411,36 +487,37 @@ export function buildWeeklyContext(date: string, timezone: string, existingStrip
   };
 }
 
-export async function createShareLink(userId: string, stripId: string, appBaseUrl: string) {
+export async function createShareLink(userId: string, stripId: string, env: ApiEnv, baseUrl?: string) {
   const db = getDb();
+  const strip = await db.query.comicStrips.findFirst({
+    where: and(eq(comicStrips.id, stripId), eq(comicStrips.userId, userId))
+  });
+
+  if (!strip) {
+    throw new Error("STRIP_NOT_FOUND");
+  }
+
   const existing = await db.query.shareLinks.findFirst({
     where: and(eq(shareLinks.userId, userId), eq(shareLinks.comicStripId, stripId), eq(shareLinks.isActive, true))
   });
 
   if (existing) {
-    return {
-      share_id: existing.shareId,
-      share_url: `${appBaseUrl}/s/${existing.shareId}`,
-      is_active: true,
-      created_at: existing.createdAt.toISOString()
-    };
+    return mapShareLinkResponse(existing, concreteUrl(baseUrl) ?? concreteUrl(env.API_BASE_URL) ?? "http://localhost:4000")!;
   }
 
   const shareId = `shr_${Math.random().toString(36).slice(2, 10)}`;
+  const publicArtifact = await publishPublicShareArtifact(shareId, strip.composedSvg, env, baseUrl);
   const [created] = await db
     .insert(shareLinks)
     .values({
       shareId,
       userId,
       comicStripId: stripId,
-      isActive: true
+      isActive: true,
+      publicAssetPath: publicArtifact.assetPath,
+      publicAssetUrl: publicArtifact.publicUrl
     })
     .returning();
 
-  return {
-    share_id: created.shareId,
-    share_url: `${appBaseUrl}/s/${created.shareId}`,
-    is_active: created.isActive,
-    created_at: created.createdAt.toISOString()
-  };
+  return mapShareLinkResponse(created, concreteUrl(baseUrl) ?? concreteUrl(env.API_BASE_URL) ?? "http://localhost:4000")!;
 }

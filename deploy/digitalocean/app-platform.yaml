@@ -1,0 +1,87 @@
+name: dayframe
+region: fra
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+services:
+  - name: api
+    environment_slug: node-js
+    git:
+      branch: main
+      repo_clone_url: https://github.com/gaborishka/dayframe.git
+    source_dir: /
+    build_command: sh -lc "corepack enable && pnpm install --no-frozen-lockfile"
+    run_command: sh -lc "corepack enable && pnpm --filter @dayframe/api db:migrate && pnpm --filter @dayframe/api start"
+    http_port: 4000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    routes:
+      - path: /api
+        preserve_path_prefix: true
+      - path: /auth
+        preserve_path_prefix: true
+      - path: /health
+        preserve_path_prefix: true
+      - path: /media
+        preserve_path_prefix: true
+      - path: /public
+        preserve_path_prefix: true
+      - path: /s
+        preserve_path_prefix: true
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: "4000"
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: APP_BASE_URL
+        value: ${APP_URL}
+      - key: API_BASE_URL
+        value: ${api.PUBLIC_URL}
+      - key: WEB_ORIGIN
+        value: ${APP_URL}
+      - key: CORS_ALLOWED_ORIGIN
+        value: ${APP_URL}
+      - key: DATABASE_URL
+        value: ${DATABASE_URL}
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: ${JWT_SECRET}
+workers:
+  - name: worker
+    environment_slug: node-js
+    git:
+      branch: main
+      repo_clone_url: https://github.com/gaborishka/dayframe.git
+    source_dir: /
+    build_command: sh -lc "corepack enable && pnpm install --no-frozen-lockfile"
+    run_command: sh -lc "corepack enable && pnpm --filter @dayframe/worker start"
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        value: ${DATABASE_URL}
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: ${JWT_SECRET}
+static_sites:
+  - name: web
+    git:
+      branch: main
+      repo_clone_url: https://github.com/gaborishka/dayframe.git
+    source_dir: /
+    build_command: sh -lc "corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @dayframe/web build"
+    output_dir: apps/web/dist
+    catchall_document: index.html
+    routes:
+      - path: /
+    envs:
+      - key: VITE_API_BASE_URL
+        value: ${api.PUBLIC_URL}
+      - key: VITE_APP_BASE_URL
+        value: ${APP_URL}

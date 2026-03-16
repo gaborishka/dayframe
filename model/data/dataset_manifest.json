@@ -1,0 +1,43 @@
+{
+  "dataset_version": "v0.1.0",
+  "generator_version": "0.1.0",
+  "created_at": "2026-03-11T01:23:20.295751+00:00",
+  "counts_by_split": {
+    "train": 344,
+    "val": 43,
+    "test": 43
+  },
+  "total_examples": 430,
+  "coverage_summary": {
+    "personas": {
+      "creator": 71,
+      "manager": 71,
+      "parent": 72,
+      "student": 72,
+      "freelancer": 72,
+      "developer": 72
+    },
+    "tones": {
+      "chaotic": 106,
+      "humorous": 108,
+      "adventurous": 108,
+      "reflective": 108
+    },
+    "day_types": {
+      "sparse_input": 72,
+      "mundane": 71,
+      "celebratory": 72,
+      "stressful": 72,
+      "recovery_day": 71,
+      "productive": 72
+    },
+    "panel_counts": {
+      "4": 143,
+      "6": 144,
+      "5": 143
+    },
+    "narrative_modes": {}
+  },
+  "language": "en",
+  "source_policy": "synthetic_only"
+}

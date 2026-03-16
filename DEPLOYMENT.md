@@ -36,6 +36,27 @@ Purpose: Capture the practical deployment assumptions for running DayFrame on Di
 - Keep the model endpoint private to DigitalOcean networking.
 - Keep public share artifacts separate from private user media paths.
 - Prefer the smallest stable runtime footprint that still supports the demo.
+- If App Platform uses repository sources, ensure the DigitalOcean account has source access to the configured repo. If not, switch the spec to an image-based deploy path.
+
+## Current Scaffold Path
+
+- App Platform spec: [deploy/digitalocean/app-platform.yaml](/Users/Ivan_Habor/myprojects/day_frame/deploy/digitalocean/app-platform.yaml)
+- Render command: `pnpm do:render-spec`
+- Deploy command: `pnpm do:deploy`
+- Operator check script: [scripts/do/check.sh](/Users/Ivan_Habor/myprojects/day_frame/scripts/do/check.sh)
+- Root command: `pnpm do:check`
+
+The current scaffold assumes:
+
+- `apps/web` builds to `apps/web/dist`
+- `apps/api` serves the authenticated HTTP contract
+- `apps/worker` owns queue consumption and weekly compilation
+- App Platform provisions a managed PostgreSQL cluster via the app spec
+- The deployment script can bind App Platform to an existing managed PostgreSQL cluster named `dayframe-db`
+- API owns migrations during startup for the demo deployment path
+- App routes `/api`, `/auth`, `/health`, `/media`, `/public`, and `/s` to the API service, while `/` stays on the static web client
+- private strip assets can live in Spaces with signed URLs when Spaces credentials are configured
+- public share artifacts live under `public/shares/{share_id}/...`
 
 ## Demo-Day Readiness Checklist
 
